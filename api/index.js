@@ -56,16 +56,19 @@ module.exports = async (req, res) => {
         await initializeDB();
         
         // In Vercel, requests to /api/* are handled by this function
-        // The req.url will include /api, so we need to strip it for Express routes
-        const originalUrl = req.url;
+        // The req.url might include /api, so we need to strip it for Express routes
+        const originalUrl = req.url || req.path || '/';
         if (originalUrl.startsWith('/api')) {
-            req.url = originalUrl.replace('/api', '') || '/';
+            // Strip /api prefix
+            const newPath = originalUrl.replace(/^\/api/, '') || '/';
+            req.url = newPath;
+            req.path = newPath;
         }
         
         // Handle the request
         return app(req, res);
     } catch (error) {
         console.error('Request handler error:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ error: 'Internal server error', message: error.message });
     }
 };

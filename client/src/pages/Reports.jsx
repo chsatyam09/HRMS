@@ -10,7 +10,7 @@ const Reports = () => {
     const [loading, setLoading] = useState(true);
     const [employees, setEmployees] = useState([]);
     const [filters, setFilters] = useState({
-        startDate: new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString().split('T')[0],
+        startDate: new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0],
         endDate: new Date().toISOString().split('T')[0],
         department: 'all'
     });
@@ -22,11 +22,34 @@ const Reports = () => {
                 getReports(filters),
                 getEmployees()
             ]);
-            setReports(reportsRes.data);
+            // Always set reports, even if data is empty/zero
+            setReports(reportsRes.data || {
+                totalEmployees: 0,
+                totalAttendance: 0,
+                presentCount: 0,
+                absentCount: 0,
+                attendanceRate: 0,
+                departmentStats: [],
+                monthlyTrend: []
+            });
             setEmployees(employeesRes.data || []);
         } catch (error) {
-            toast.error('Failed to load reports');
-            console.error(error);
+            console.error('Error fetching reports:', error);
+            // Set empty reports structure on error so UI doesn't break
+            setReports({
+                totalEmployees: 0,
+                totalAttendance: 0,
+                presentCount: 0,
+                absentCount: 0,
+                attendanceRate: 0,
+                departmentStats: [],
+                monthlyTrend: []
+            });
+            if (error.response) {
+                toast.error(error.response.data?.message || 'Failed to load reports');
+            } else {
+                toast.error('Failed to load reports');
+            }
         } finally {
             setLoading(false);
         }
@@ -117,10 +140,11 @@ const Reports = () => {
                 </div>
             </motion.div>
 
-            {!reports ? (
+            {!reports || (reports.totalAttendance === 0 && reports.totalEmployees === 0) ? (
                 <div className="bg-white rounded-2xl shadow-xl p-12 text-center">
                     <AlertCircle size={48} className="text-slate-400 mx-auto mb-4" />
                     <p className="text-slate-500 font-bold">No data available for the selected period</p>
+                    <p className="text-slate-400 text-sm mt-2">Try adjusting the date range or check if attendance has been marked</p>
                 </div>
             ) : (
                 <>

@@ -26,84 +26,115 @@ exports.getReports = async (req, res) => {
         // Calculate statistics
         const totalEmployees = await Employee.count({ where: employeeFilter });
         
-        // Get attendance with employee filter
-        let attendanceQuery = {
-            where: dateFilter
-        };
-        
+        // Get employee IDs for filtering attendance if department filter is applied
+        let employeeIds = null;
         if (department && department !== 'all') {
-            const employeeIds = await Employee.findAll({
+            const employees = await Employee.findAll({
                 where: employeeFilter,
                 attributes: ['id'],
                 raw: true
-            }).then(emps => emps.map(e => e.id));
-            
+            });
+            employeeIds = employees.map(e => e.id);
+        }
+        
+        // Build attendance query
+        let attendanceWhere = { ...dateFilter };
+        if (employeeIds !== null) {
             if (employeeIds.length > 0) {
-                attendanceQuery.where.EmployeeId = { [Sequelize.Op.in]: employeeIds };
+                attendanceWhere.EmployeeId = { [Sequelize.Op.in]: employeeIds };
             } else {
-                attendanceQuery.where.EmployeeId = { [Sequelize.Op.in]: [] };
+                // No employees in this department, return empty results
+                return res.json({
+                    totalEmployees: 0,
+                    totalAttendance: 0,
+                    presentCount: 0,
+                    absentCount: 0,
+                    attendanceRate: 0,
+                    departmentStats: [],
+                    monthlyTrend: []
+                });
             }
         }
         
-        const totalAttendance = await Attendance.count(attendanceQuery);
+        const totalAttendance = await Attendance.count({ where: attendanceWhere });
         const presentCount = await Attendance.count({
-            ...attendanceQuery,
             where: {
-                ...attendanceQuery.where,
+                ...attendanceWhere,
                 status: 'Present'
             }
         });
 
-        // Department-wise stats
-        const deptStats = await Employee.findAll({
+        // Department-wise stats - fixed query
+        const deptStatsRaw = await Employee.findAll({
             attributes: [
                 'department',
-                [Sequelize.fn('COUNT', Sequelize.col('Employee.id')), 'total']
+                [Sequelize.fn('COUNT', Sequelize.col('id')), 'total']
             ],
             where: employeeFilter,
             group: ['department'],
             raw: true
         });
+        
+        // Transform to match frontend format (name instead of department)
+        const deptStats = deptStatsRaw.map(stat => ({
+            name: stat.department,
+            total: parseInt(stat.total) || 0
+        }));
 
-        // Monthly attendance trend
-        let trendQuery = {
+        // Monthly attendance trend - fixed query for SQLite
+        let trendWhere = { ...dateFilter };
+        if (employeeIds !== null && employeeIds.length > 0) {
+            trendWhere.EmployeeId = { [Sequelize.Op.in]: employeeIds };
+        }
+        
+        const monthlyTrendRaw = await Attendance.findAll({
             attributes: [
                 [Sequelize.fn('strftime', '%Y-%m', Sequelize.col('date')), 'month'],
-                [Sequelize.fn('COUNT', Sequelize.col('Attendance.id')), 'count'],
-                [Sequelize.fn('SUM', Sequelize.literal("CASE WHEN status = 'Present' THEN 1 ELSE 0 END")), 'present']
+                [Sequelize.fn('COUNT', Sequelize.col('id')), 'count']
             ],
-            where: dateFilter,
+            where: trendWhere,
             group: [Sequelize.fn('strftime', '%Y-%m', Sequelize.col('date'))],
             order: [[Sequelize.fn('strftime', '%Y-%m', Sequelize.col('date')), 'ASC']],
             raw: true
-        };
-        
-        if (department && department !== 'all') {
-            const employeeIds = await Employee.findAll({
-                where: employeeFilter,
-                attributes: ['id'],
-                raw: true
-            }).then(emps => emps.map(e => e.id));
-            
-            if (employeeIds.length > 0) {
-                trendQuery.where.EmployeeId = { [Sequelize.Op.in]: employeeIds };
-            } else {
-                trendQuery.where.EmployeeId = { [Sequelize.Op.in]: [] };
+        });
+
+        // Get present count per month separately
+        const monthlyPresentRaw = await Attendance.findAll({
+            attributes: [
+                [Sequelize.fn('strftime', '%Y-%m', Sequelize.col('date')), 'month'],
+                [Sequelize.fn('COUNT', Sequelize.col('id')), 'present']
+            ],
+            where: {
+                ...trendWhere,
+                status: 'Present'
+            },
+            group: [Sequelize.fn('strftime', '%Y-%m', Sequelize.col('date'))],
+            raw: true
+        });
+
+        // Combine monthly data
+        const monthlyMap = new Map();
+        monthlyTrendRaw.forEach(item => {
+            monthlyMap.set(item.month, { month: item.month, count: parseInt(item.count) || 0, present: 0 });
+        });
+        monthlyPresentRaw.forEach(item => {
+            if (monthlyMap.has(item.month)) {
+                monthlyMap.get(item.month).present = parseInt(item.present) || 0;
             }
-        }
-        
-        const monthlyTrend = await Attendance.findAll(trendQuery);
+        });
+        const monthlyTrend = Array.from(monthlyMap.values());
 
         res.json({
-            totalEmployees,
-            totalAttendance,
-            presentCount,
-            absentCount: totalAttendance - presentCount,
-            attendanceRate: totalAttendance > 0 ? ((presentCount / totalAttendance) * 100).toFixed(2) : 0,
-            departmentStats: deptStats,
-            monthlyTrend: monthlyTrend
+            totalEmployees: totalEmployees || 0,
+            totalAttendance: totalAttendance || 0,
+            presentCount: presentCount || 0,
+            absentCount: (totalAttendance || 0) - (presentCount || 0),
+            attendanceRate: totalAttendance > 0 ? ((presentCount / totalAttendance) * 100).toFixed(2) : '0.00',
+            departmentStats: deptStats || [],
+            monthlyTrend: monthlyTrend || []
         });
     } catch (error) {
+        console.error('Error in getReports:', error);
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
