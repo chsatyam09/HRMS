@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "HRMS Lite - Human Resource Management System",
   "engines": {
-    "node": "24.x"
+    "node": "24.1git add package.json api/package.json"
   },
   "scripts": {
     "install-client": "cd client && npm install",
