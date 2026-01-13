@@ -1,7 +1,42 @@
-node_modules
+# Vercel ignore file
+# Files and directories to exclude from deployment
+
+# Local development files
+node_modules/
+.env
 .env.local
 .env.*.local
-*.log
-.DS_Store
+
+# Build artifacts (will be built on Vercel)
+client/dist/
+client/node_modules/
+server/node_modules/
+
+# Database files (will be created in /tmp on Vercel)
 server/database.sqlite
-.git
+*.sqlite
+*.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Git
+.git/
+.gitignore
+
+# Documentation (optional - can include if needed)
+# *.md
